@@ -2,11 +2,21 @@
 
 A tiny, **character-level GPT written in pure Java with no ML libraries** (no native code and no autograd framework). Every piece is hand-written: tensors, forward and backward passes, the Adam optimizer, and sampling. It is built so you can step through a transformer line by line in a JVM debugger.
 
-> This is a learning project, not a production LLM.
+> A learning project for understanding transformer internals, not a production LLM.
 
 ## Why I built it
 
 I come from many years of Java engineering, so the JVM debugger is where I understand systems best. To learn how a language model works from first principles, following Andrej Karpathy-style material, I wrote one where nothing is hidden. There is no `loss.backward()` doing the work for me: every gradient is computed by code I wrote. I later rebuilt the ideas at full GPT-2 scale in PyTorch ([TorchLLM](https://github.com/Adaggubati404/TorchLLM)).
+
+## What this taught me
+
+- **How data moves during training.** Characters become token ids, then embeddings plus positional encodings, then pass through the transformer blocks to logits. Every intermediate tensor is a Java array you can inspect.
+- **How matrix multiplication works in the model.** The query, key and value projections, the attention scores, the output projection and the LM head are all `Tensor.matmul` calls written by hand.
+- **How loss is calculated.** Softmax turns the logits into probabilities, and cross-entropy measures how much probability the model gave the correct next character.
+- **How backpropagation drives training.** Every layer has a hand-written backward pass that sends gradients from the loss back through the LM head, LayerNorm, the feed-forward network, attention and the embeddings. Adam then uses those gradients to update the weights.
+- **Why inference doesn't need backpropagation.** Generation only runs the forward pass and samples the next token. Gradients are needed only to change the weights, and at inference the weights are fixed.
+- **How temperature shapes creative output.** Dividing the logits by the temperature sharpens the distribution (close to greedy) or flattens it (more varied, more "creative" text). Temperature ≤ 0 falls back to greedy decoding.
+- **How layer normalization helps training.** Normalizing each position's activations keeps them on a stable scale between blocks, which keeps gradients well-behaved and training steady.
 
 ## Features
 
@@ -24,7 +34,6 @@ I come from many years of Java engineering, so the JVM debugger is where I under
 - **Generation:** autoregressive sampling with temperature (greedy when temperature ≤ 0).
 - **Checkpointing:** saves and loads model weights to `model.bin`.
 - **Built for debugging:**
-  - ready-made VS Code / Cursor launch configurations
   - logs of the token embeddings and positional encoding during training
   - an attention heatmap printed at the end of training
 
@@ -68,34 +77,11 @@ During training the program prints the loss at step 1, every 50 steps, and at th
 
 If you change `corpus.txt`, retrain before generating. The checkpoint's vocabulary must match the tokenizer.
 
-### Training output
+> **Note:** This is a learning project built to understand the internals; it is not trained to convergence. The tiny model and corpus are there so every step can be inspected, not to produce fluent text.
 
-> **TODO (Ashok):** paste the real loss lines from `mvn -q exec:java -Dexec.args="train"`.
+## Stepping through it in a debugger
 
-```text
-step    1  loss=<value>
-step   50  loss=<value>
-step  100  loss=<value>
-```
-
-### Sample generation
-
-> **TODO (Ashok):** paste the real `--- sample ---` text printed after training.
-
-```text
-<paste generated text here>
-```
-
-## Debug walkthrough (VS Code / Cursor)
-
-1. Install the **Extension Pack for Java** (recommended in `.vscode/extensions.json`).
-2. Open this folder as the workspace so the Maven project `java-toy-llm` is imported.
-3. Point the Java settings at your own JDK 25 installation.
-4. In **Run and Debug**, pick a configuration:
-   - **Debug Train:** train with breakpoints
-   - **Debug Generate:** load `model.bin` and sample
-   - **Debug Main (no args):** prints usage
-   - **Attach to JVM:** attach to a process started with `-agentlib:jdwp=transport=dt_socket,server=y,suspend=y,address=5005`
+IDE launch configurations are not included in this repo. Open it as a Maven project in any Java IDE (IntelliJ IDEA, VS Code with the Extension Pack for Java, Eclipse), set JDK 25, and run `com.toyllm.Main` with the argument `train` or `generate Once upon`. To debug a Maven run instead, start it with `MAVEN_OPTS="-agentlib:jdwp=transport=dt_socket,server=y,suspend=y,address=5005" mvn -q exec:java -Dexec.args="train"` and attach your IDE's remote debugger to port 5005.
 
 Suggested breakpoints:
 
@@ -131,22 +117,17 @@ src/main/resources/corpus.txt
 pom.xml
 ```
 
-## What I learned
-
-- What a tokenizer, an embedding and a positional encoding actually produce, and how position changes the input to the first block.
-- How causal masking works inside attention: future positions get negative infinity before the softmax, and their gradients are zeroed in the backward pass.
-- Backpropagation without a framework: deriving and coding gradients for attention, LayerNorm, GELU, the residual paths and cross-entropy, and scaling them by the batch size.
-- How Adam updates parameters, and how token embeddings move during training while a sinusoidal positional encoding stays fixed.
-- How sampling temperature changes generation compared with greedy decoding.
-
 ## Next steps
 
 These are not implemented yet:
 
 - Gradient-check tests that compare the manual backward passes with numerical gradients.
 - Configurable hyperparameters from the command line instead of constants.
-- A larger corpus and longer training, with loss curves.
 - Top-k sampling, matching the PyTorch version.
+
+## Roadmap
+
+This project is one step in learning the AI stack from the ground up before moving into agentic engineering. **Next: fine-tuning the open-source Qwen model and building a real agentic application on top of it.**
 
 ## License
 
